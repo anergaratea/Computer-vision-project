@@ -1,0 +1,8 @@
+torch>=1.7
+torchvision
+opencv-python
+matplotlib
+pycocotools
+jupyter
+ultralytics
+git+https://github.com/facebookresearch/segment-anything.git
