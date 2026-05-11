@@ -1,4 +1,4 @@
-# 👁️ Proyecto de Visión por Computadora: Segment Anything & YOLO
+# Proyecto de Visión por Computadora: Segment Anything & YOLO
 
 Este proyecto es una introducción práctica a dos de las tareas más importantes en Visión por Computadora (CV): la **Detección de Objetos** y la **Segmentación de Imágenes**. 
 
@@ -8,7 +8,7 @@ Para ello, utilizamos dos de los modelos más avanzados de la actualidad:
 
 ---
 
-## 🧠 Conceptos Previos: ¿Qué estamos haciendo?
+## Conceptos Previos: ¿Qué estamos haciendo?
 
 En Visión por Computadora, queremos que la máquina "entienda" una imagen. Hay diferentes niveles de entendimiento:
 - **Clasificación:** ¿Qué hay en la imagen? (Ej. "Un perro").
@@ -19,7 +19,7 @@ Este proyecto te enseña a usar la segmentación pura y también a crear un **Pi
 
 ---
 
-## ⚙️ Instalación
+## Instalación
 
 1. Crea un entorno virtual para no interferir con otros proyectos de tu PC e instala las dependencias:
    ```bash
@@ -37,7 +37,7 @@ El archivo `requirements.txt` instalará bibliotecas clave de Visión por Comput
 
 ---
 
-## 🚀 Uso y Explicación del Código
+## Uso y Explicación del Código
 
 El proyecto cuenta con dos scripts principales. Cada uno ilustra un concepto diferente.
 
@@ -69,7 +69,7 @@ python yolo_sam_pipeline.py --image path/a/tu/imagen.jpg
 ```
 
 ---
-### 🔮 Próximos pasos y Extensiones
+### Próximos pasos y Extensiones
 
 Si quieres seguir aprendiendo y expandiendo este repositorio, aquí tienes algunas ideas:
 - **SAM 2 (Video):** Procesamiento temporal cuadro a cuadro con memoria de secuencia para segmentar objetos en movimiento en un MP4.
