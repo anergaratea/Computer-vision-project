@@ -10,12 +10,14 @@ from segment_anything import sam_model_registry, SamPredictor
 from ultralytics import YOLO
 
 def download_file(url, path):
+    # Utilidad para descargar los pesos de los modelos si no se tienen localmente
     if not os.path.exists(path):
         print(f"Downloading from {url} to {path}...")
         urllib.request.urlretrieve(url, path)
         print("Download complete.")
 
 def show_mask(mask, ax, random_color=False):
+    # Función para superponer la silueta (máscara) segmentada en la imagen original
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
     else:
@@ -25,6 +27,7 @@ def show_mask(mask, ax, random_color=False):
     ax.imshow(mask_image)
 
 def show_box(box, ax):
+    # Función para dibujar las "cajas delimitadoras" de YOLO (Bounding boxes)
     x0, y0 = box[0], box[1]
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0,0,0,0), lw=2))    
@@ -36,7 +39,8 @@ def main():
     parser.add_argument("--yolo_model", default="yolov8n.pt", help="YOLOv8 model weights")
     args = parser.parse_args()
 
-    # Configuración del modelo SAM
+    # --- PREPARACIÓN DE MODELOS ---
+    # 1. Configuración del modelo SAM (Segmentación)
     sam_checkpoint = "sam_vit_h_4b8939.pth"
     model_type = "vit_h"
     url = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth"
@@ -45,17 +49,21 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() and args.device == 'cuda' else "cpu")
     print(f"Using device: {device}")
 
-    # Inicialización de SAM usando SamPredictor (más interactivo que AutomaticMaskGenerator)
+    # Inicialización de SAM usando SamPredictor 
+    # A diferencia de AutomaticMaskGenerator, SamPredictor está optimizado para recibir "prompts" (pistas) como puntos o cajas.
     print("Loading SAM model...")
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
     sam_predictor = SamPredictor(sam)
 
-    # Cargar el modelo YOLO para detección de objetos inicial
+    # 2. Cargar el modelo YOLO (Detección de objetos inicial)
+    # YOLOv8n es la versión 'nano' (muy rápida y ligera)
     print(f"Loading YOLO model {args.yolo_model}...")
     yolo_model = YOLO(args.yolo_model)
 
-    # 1. Leer y preparar la imagen (BGR a RGB)
+    # --- EJECUCIÓN DEL PIPELINE ---
+    # Paso 1: Leer y preparar la imagen
+    # OpenCV usa BGR. Lo pasamos a RGB para que los modelos interpreten bien los colores.
     print(f"Loading image {args.image}...")
     image_bgr = cv2.imread(args.image)
     if image_bgr is None:
@@ -63,8 +71,9 @@ def main():
         return
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-    # 2. Detección de objetos con YOLO
-    # YOLO encontrará objetos y sus coordenadas rectangulares (bounding boxes)
+    # Paso 2: Detección de objetos con YOLO
+    # YOLO escanea la imagen buscando patrones conocidos (personas, coches, etc.)
+    # y devuelve las coordenadas de rectángulos que los encierran (bounding boxes).
     print("Running YOLO detection...")
     results = yolo_model(image_bgr)
     
@@ -72,37 +81,39 @@ def main():
     if len(results) > 0:
         det_boxes = results[0].boxes
         if det_boxes is not None:
-            # Extraer las coordenadas [x_min, y_min, x_max, y_max]
+            # Extraer las coordenadas exactas de las cajas detectadas [x_min, y_min, x_max, y_max]
             boxes = det_boxes.xyxy.cpu().numpy() 
             print(f"Found {len(boxes)} bounding boxes.")
 
-    # 3. Calcular embeddings de la imagen en SAM
-    # Paso crucial: SAM calcula las características pesadas de la imagen una sola vez.
-    # Tras este paso, los prompts (cajas/puntos) se procesan instantáneamente.
+    # Paso 3: Calcular características profundas (Embeddings) de la imagen con SAM
+    # Este es el paso más pesado computacionalmente. SAM convierte la imagen a un espacio matemático.
+    # Se hace UNA SOLA VEZ por imagen. Después, los prompts (cajas/puntos) se procesan instantáneamente.
     print("Setting image embeddings for SAM...")
     sam_predictor.set_image(image_rgb)
 
     plt.figure(figsize=(10, 10))
     plt.imshow(image_rgb)
 
-    # 4. Pasar las cajas (boxes) de YOLO como "prompts" a SAM
+    # Paso 4: Unir ambos modelos (El "Prompting" visual)
+    # Pasamos las cajas de YOLO como pistas a SAM
     if len(boxes) > 0:
         input_boxes = torch.tensor(boxes, device=sam_predictor.device)
-        # Adaptar las coordenadas de las cajas al formato interno que espera SAM
+        # Adaptamos las coordenadas de las cajas al formato interno que espera SAM
         transformed_boxes = sam_predictor.transform.apply_boxes_torch(input_boxes, image_rgb.shape[:2])
         
-        # Generar las máscaras (SAM ajustará la máscara perfectamente dentro de cada caja)
+        # Generamos las máscaras
+        # Le decimos a SAM: "Dentro de estas cajas de YOLO, encuéntrame la silueta exacta"
         masks, _, _ = sam_predictor.predict_torch(
             point_coords=None,
             point_labels=None,
             boxes=transformed_boxes,
-            multimask_output=False,
+            multimask_output=False, # Queremos una sola máscara (la mejor) por cada caja
         )
         
-        # Dibujar resultados
+        # Dibujar los resultados visuales superpuestos en la imagen original
         for i, mask in enumerate(masks):
-            show_mask(mask.cpu().numpy()[0], plt.gca(), random_color=True)
-            show_box(boxes[i], plt.gca())
+            show_mask(mask.cpu().numpy()[0], plt.gca(), random_color=True) # Silueta de SAM
+            show_box(boxes[i], plt.gca()) # Caja de YOLO original
             
     plt.axis('off')
     output_filename = f"yolo_sam_output_{os.path.basename(args.image)}"

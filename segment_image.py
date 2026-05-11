@@ -8,6 +8,7 @@ import os
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 
 def download_checkpoint(url, path):
+    # Descarga el modelo fundacional si no existe en local
     if not os.path.exists(path):
         print(f"Downloading checkpoint from {url} to {path}...")
         urllib.request.urlretrieve(url, path)
@@ -16,6 +17,7 @@ def download_checkpoint(url, path):
         print(f"Checkpoint already exists at {path}.")
 
 def show_anns(anns):
+    # Función de utilidad para dibujar las máscaras generadas sobre la imagen
     if len(anns) == 0:
         return
     sorted_anns = sorted(anns, key=(lambda x: x['area']), reverse=True)
@@ -36,33 +38,42 @@ def main():
     parser.add_argument("--device", default="cuda", help="Device to use (cuda/cpu)")
     args = parser.parse_args()
 
-    # Model configuration
+    # Configuración del modelo SAM
+    # Utilizamos el modelo ViT-H (Vision Transformer Huge), que es el más preciso
     sam_checkpoint = "sam_vit_h_4b8939.pth"
     model_type = "vit_h"
     url = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth"
 
     download_checkpoint(url, sam_checkpoint)
 
+    # Seleccionamos GPU (cuda) si está disponible, sino CPU
     device = torch.device(args.device if torch.cuda.is_available() and args.device == 'cuda' else "cpu")
     print(f"Using device: {device}")
 
+    # Cargamos el modelo en memoria y lo enviamos al dispositivo (CPU/GPU)
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
 
+    # Instanciamos el generador automático. 
+    # Este generador escaneará la imagen con una cuadrícula de puntos para segmentar todo lo que encuentre.
     mask_generator = SamAutomaticMaskGenerator(sam)
 
-    # Read image
+    # Paso 1: Lectura de imagen con OpenCV
+    # OpenCV lee las imágenes en formato BGR por defecto
     print(f"Loading image {args.image}...")
     image = cv2.imread(args.image)
     if image is None:
         print("Error: Could not read image.")
         return
+    # Convertimos de BGR a RGB, que es el formato que esperan las redes neuronales estándar
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+    # Paso 2: Generar las máscaras
+    # Aquí es donde ocurre la inferencia (predicción) de la inteligencia artificial
     print("Generating masks...")
     masks = mask_generator.generate(image)
 
-    # Visualization
+    # Paso 3: Visualización y guardado
     plt.figure(figsize=(10, 10))
     plt.imshow(image)
     show_anns(masks)
