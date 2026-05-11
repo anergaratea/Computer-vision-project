@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--yolo_model", default="yolov8n.pt", help="YOLOv8 model weights")
     args = parser.parse_args()
 
-    # Model configuration for SAM
+    # Configuración del modelo SAM
     sam_checkpoint = "sam_vit_h_4b8939.pth"
     model_type = "vit_h"
     url = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth"
@@ -45,15 +45,17 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() and args.device == 'cuda' else "cpu")
     print(f"Using device: {device}")
 
+    # Inicialización de SAM usando SamPredictor (más interactivo que AutomaticMaskGenerator)
     print("Loading SAM model...")
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
     sam_predictor = SamPredictor(sam)
 
+    # Cargar el modelo YOLO para detección de objetos inicial
     print(f"Loading YOLO model {args.yolo_model}...")
     yolo_model = YOLO(args.yolo_model)
 
-    # 1. Read Image
+    # 1. Leer y preparar la imagen (BGR a RGB)
     print(f"Loading image {args.image}...")
     image_bgr = cv2.imread(args.image)
     if image_bgr is None:
@@ -61,31 +63,35 @@ def main():
         return
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-    # 2. Run object detection
+    # 2. Detección de objetos con YOLO
+    # YOLO encontrará objetos y sus coordenadas rectangulares (bounding boxes)
     print("Running YOLO detection...")
     results = yolo_model(image_bgr)
     
     boxes = []
     if len(results) > 0:
-        # Extract bounding boxes from YOLO results
         det_boxes = results[0].boxes
         if det_boxes is not None:
-            boxes = det_boxes.xyxy.cpu().numpy() # [x1, y1, x2, y2]
+            # Extraer las coordenadas [x_min, y_min, x_max, y_max]
+            boxes = det_boxes.xyxy.cpu().numpy() 
             print(f"Found {len(boxes)} bounding boxes.")
 
-    # 3. Set image in SAM Predictor
+    # 3. Calcular embeddings de la imagen en SAM
+    # Paso crucial: SAM calcula las características pesadas de la imagen una sola vez.
+    # Tras este paso, los prompts (cajas/puntos) se procesan instantáneamente.
     print("Setting image embeddings for SAM...")
     sam_predictor.set_image(image_rgb)
 
     plt.figure(figsize=(10, 10))
     plt.imshow(image_rgb)
 
-    # 4. Predict masks based on YOLO bounding boxes
+    # 4. Pasar las cajas (boxes) de YOLO como "prompts" a SAM
     if len(boxes) > 0:
         input_boxes = torch.tensor(boxes, device=sam_predictor.device)
-        # Transform boxes to SAM format
+        # Adaptar las coordenadas de las cajas al formato interno que espera SAM
         transformed_boxes = sam_predictor.transform.apply_boxes_torch(input_boxes, image_rgb.shape[:2])
         
+        # Generar las máscaras (SAM ajustará la máscara perfectamente dentro de cada caja)
         masks, _, _ = sam_predictor.predict_torch(
             point_coords=None,
             point_labels=None,
@@ -93,6 +99,7 @@ def main():
             multimask_output=False,
         )
         
+        # Dibujar resultados
         for i, mask in enumerate(masks):
             show_mask(mask.cpu().numpy()[0], plt.gca(), random_color=True)
             show_box(boxes[i], plt.gca())
